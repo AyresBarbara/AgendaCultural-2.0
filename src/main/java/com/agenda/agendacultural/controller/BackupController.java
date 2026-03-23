@@ -2,6 +2,7 @@ package com.agenda.agendacultural.controller;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseEntity;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.http.MediaType;
@@ -232,55 +233,140 @@ public ResponseEntity<?> restaurarBackup(@RequestBody Map<String, String> reques
      * Endpoint para restaurar backup via upload de arquivo
      */
     @PostMapping(value = "/restore/upload", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    public ResponseEntity<?> restaurarBackupUpload(@RequestParam("file") MultipartFile file) {
-        try {
-            logger.info("Iniciando restore via upload: {}", file.getOriginalFilename());
-            
-            File pastaBackup = new File(BACKUP_DIR);
-            if (!pastaBackup.exists()) {
-                pastaBackup.mkdirs();
-            }
-            
-            // Salvar arquivo temporariamente
-            File tempFile = new File(BACKUP_DIR + "temp_" + file.getOriginalFilename());
-            file.transferTo(tempFile);
-
-            String dbName = extractDatabaseName(dbUrl);
-
-            // Caminho do mysql baseado no mysqldump.path (CORRIGIDO!)
-            String mysqlPath = mysqldumpPath.replace("mysqldump.exe", "mysql.exe");
-            
-            List<String> comando = new ArrayList<>();
-            comando.add(mysqlPath);
-            comando.add("-u" + dbUser);
-            comando.add("-p" + dbPassword);
-            comando.add(dbName);
-
-            logger.info("Comando: {}", String.join(" ", comando));
-
-            ProcessBuilder processBuilder = new ProcessBuilder(comando);
-            processBuilder.redirectInput(tempFile);
-            processBuilder.redirectErrorStream(true);
-            
-            Process processo = processBuilder.start();
-            int codigoSaida = processo.waitFor();
-
-            // Apagar arquivo temporário
-            tempFile.delete();
-
-            if (codigoSaida == 0) {
-                logger.info("✅ Restore via upload concluído!");
-                return ResponseEntity.ok(Map.of(
-                    "mensagem", "Restore realizado com sucesso!",
-                    "arquivo", file.getOriginalFilename()
-                ));
-            } else {
-                throw new Exception("Erro ao restaurar backup. Código: " + codigoSaida);
-            }
-
-        } catch (Exception e) {
-            logger.error("❌ Erro no restore via upload: ", e);
-            return ResponseEntity.status(500).body(Map.of("erro", e.getMessage()));
+public ResponseEntity<?> restaurarBackupUpload(@RequestParam("file") MultipartFile file) {
+    try {
+        logger.info("Iniciando restore via upload: {}", file.getOriginalFilename());
+        
+        String userDir = System.getProperty("user.dir");
+        String backupPath = userDir + File.separator + "backups";
+        
+        File pastaBackup = new File(backupPath);
+        if (!pastaBackup.exists()) {
+            pastaBackup.mkdirs();
+            logger.info("Pasta de backups criada em: {}", pastaBackup.getAbsolutePath());
         }
+        
+        // Salvar arquivo original temporário
+        File tempFileOriginal = new File(pastaBackup, "temp_original_" + file.getOriginalFilename());
+        file.transferTo(tempFileOriginal);
+        logger.info("Arquivo original salvo em: {}", tempFileOriginal.getAbsolutePath());
+        
+        // Criar arquivo limpo (sem avisos do mysqldump)
+        File tempFileLimpo = new File(pastaBackup, "temp_limpo_" + file.getOriginalFilename());
+        
+        try (BufferedReader reader = new BufferedReader(new FileReader(tempFileOriginal));
+             BufferedWriter writer = new BufferedWriter(new FileWriter(tempFileLimpo))) {
+            
+            String linha;
+            while ((linha = reader.readLine()) != null) {
+                // Pular linhas de aviso do mysqldump
+                if (linha.startsWith("mysqldump: [Warning]") || 
+                    linha.contains("Using a password on the command line")) {
+                    logger.info("Pulando linha de aviso: {}", linha);
+                    continue;
+                }
+                writer.write(linha);
+                writer.newLine();
+            }
+        }
+        
+        logger.info("Arquivo limpo criado: {}", tempFileLimpo.getAbsolutePath());
+        logger.info("Arquivo limpo tamanho: {} bytes", tempFileLimpo.length());
+
+        String dbName = extractDatabaseName(dbUrl);
+        String mysqlPath = mysqldumpPath.replace("mysqldump.exe", "mysql.exe");
+        
+        File mysqlFile = new File(mysqlPath);
+        if (!mysqlFile.exists()) {
+            throw new Exception("mysql.exe não encontrado em: " + mysqlPath);
+        }
+
+        List<String> comando = new ArrayList<>();
+        comando.add(mysqlPath);
+        comando.add("-u" + dbUser);
+        comando.add("-p" + dbPassword);
+        comando.add(dbName);
+
+        logger.info("Comando: {}", String.join(" ", comando));
+
+        ProcessBuilder processBuilder = new ProcessBuilder(comando);
+        processBuilder.redirectInput(tempFileLimpo);
+        processBuilder.redirectErrorStream(true);
+        
+        Process processo = processBuilder.start();
+        
+        BufferedReader reader = new BufferedReader(new InputStreamReader(processo.getInputStream()));
+        String linha;
+        StringBuilder output = new StringBuilder();
+        while ((linha = reader.readLine()) != null) {
+            logger.info("MYSQL: {}", linha);
+            output.append(linha).append("\n");
+        }
+        
+        int codigoSaida = processo.waitFor();
+        logger.info("Código de saída: {}", codigoSaida);
+
+        // Apagar arquivos temporários
+        tempFileOriginal.delete();
+        tempFileLimpo.delete();
+        logger.info("Arquivos temporários removidos");
+
+        if (codigoSaida == 0) {
+            logger.info("✅ Restore via upload concluído!");
+            return ResponseEntity.ok(Map.of(
+                "mensagem", "Restore realizado com sucesso!",
+                "arquivo", file.getOriginalFilename()
+            ));
+        } else {
+            throw new Exception("Erro ao restaurar backup. Código: " + codigoSaida + " - Saída: " + output.toString());
+        }
+
+    } catch (Exception e) {
+        logger.error("❌ Erro no restore via upload: ", e);
+        return ResponseEntity.status(500).body(Map.of(
+            "erro", "Falha no restore: " + e.getMessage(),
+            "detalhes", e.toString()
+        ));
     }
+}
+
+
+    //backup agendado
+    @Scheduled(cron = "0 0 2 * * ?") // Executa todo dia às 2h
+public void backupAgendado() {
+    try {
+        logger.info("Executando backup agendado...");
+        
+        File pastaBackup = new File(BACKUP_DIR);
+        if (!pastaBackup.exists()) pastaBackup.mkdirs();
+
+        String dbName = extractDatabaseName(dbUrl);
+        String dataHora = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"));
+        String nomeArquivo = "backup_agendado_" + dbName + "_" + dataHora + ".sql";
+        String caminhoCompleto = BACKUP_DIR + nomeArquivo;
+
+        List<String> comando = new ArrayList<>();
+        comando.add(mysqldumpPath);
+        comando.add("--no-defaults");
+        comando.add("-u" + dbUser);
+        comando.add("-p" + dbPassword);
+        comando.add(dbName);
+
+        ProcessBuilder processBuilder = new ProcessBuilder(comando);
+        processBuilder.redirectOutput(new File(caminhoCompleto));
+        processBuilder.redirectErrorStream(true);
+        
+        Process processo = processBuilder.start();
+        int codigoSaida = processo.waitFor();
+
+        if (codigoSaida == 0) {
+            logger.info("Backup agendado realizado: {}", nomeArquivo);
+        } else {
+            logger.error("Erro no backup agendado");
+        }
+
+    } catch (Exception e) {
+        logger.error("Erro no backup agendado: {}", e.getMessage());
+    }
+}
 }
