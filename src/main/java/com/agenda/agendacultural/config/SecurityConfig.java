@@ -28,11 +28,14 @@ public class SecurityConfig {
         http
             .csrf(csrf -> csrf.disable())
             .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+            //.authorizeHttpRequests(auth -> auth
+              //  .requestMatchers("/api/auth/**").permitAll()
+                //.requestMatchers("/login", "/register", "/css/**", "/js/**").permitAll()
+                //.requestMatchers("/swagger-ui.html", "/swagger-ui/**", "/api-docs/**").permitAll()
+                //.anyRequest().authenticated()
+            //)
             .authorizeHttpRequests(auth -> auth
-                .requestMatchers("/api/auth/**").permitAll()
-                .requestMatchers("/login", "/register", "/css/**", "/js/**").permitAll()
-                .requestMatchers("/swagger-ui.html", "/swagger-ui/**", "/api-docs/**").permitAll()
-                .anyRequest().authenticated()
+                .anyRequest().permitAll()  // Libera TUDO
             )
             .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
         

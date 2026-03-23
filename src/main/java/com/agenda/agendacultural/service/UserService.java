@@ -16,9 +16,11 @@ import java.util.stream.Collectors;
 public class UserService {
 
     private final UserRepository userRepository;
+    private final LogService logService;
 
-    public UserService(UserRepository userRepository) {
+    public UserService(UserRepository userRepository, LogService logService) {
         this.userRepository = userRepository;
+        this.logService = logService;
     }
 
     public UserResponseDTO createUser(UserCreateDto userCreateDto) {
@@ -26,7 +28,7 @@ public class UserService {
         user.setIdUser(UUID.randomUUID());
         user.setName(userCreateDto.getName());
         user.setEmail(userCreateDto.getEmail());
-        user.setPassword(userCreateDto.getPassword()); // Sem criptografia, conforme solicitado
+        user.setPassword(userCreateDto.getPassword());
         user.setRegistrationDate(LocalDateTime.now());
 
         User savedUser = userRepository.save(user);
@@ -53,23 +55,30 @@ public class UserService {
         user.setName(userCreateDto.getName());
         user.setEmail(userCreateDto.getEmail());
         
-        // Atualiza a senha apenas se fornecida
         if (userCreateDto.getPassword() != null && !userCreateDto.getPassword().isEmpty()) {
-            user.setPassword(userCreateDto.getPassword()); // Sem criptografia, conforme solicitado
+            user.setPassword(userCreateDto.getPassword());
         }
 
         User updatedUser = userRepository.save(user);
+        
+        // LOG SIMPLES: alteração de usuário
+        logService.logAlteracaoUsuario(updatedUser.getName(), updatedUser.getEmail(), "dados atualizados");
+        
         return convertToResponseDto(updatedUser);
     }
 
     public void deleteUser(UUID id) {
-        if (!userRepository.existsById(id)) {
-            throw new ResourceNotFoundException("Usuário não encontrado com ID: " + id);
-        }
+        User user = userRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Usuário não encontrado com ID: " + id));
+        
+        String nome = user.getName();
+        String email = user.getEmail();
+        
         userRepository.deleteById(id);
+        
+        logService.logExclusaoUsuario(nome, email);
     }
 
-    // Helper method for DTO conversion
     private UserResponseDTO convertToResponseDto(User user) {
         UserResponseDTO dto = new UserResponseDTO();
         dto.setIdUser(user.getIdUser());

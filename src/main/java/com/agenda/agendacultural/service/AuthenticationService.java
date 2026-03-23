@@ -27,28 +27,28 @@ public class AuthenticationService {
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
     private final AuthenticationManager authenticationManager;
+    private final LogService logService;
 
     public AuthenticationService(
             UserRepository userRepository,
             PasswordEncoder passwordEncoder,
             JwtService jwtService,
-            AuthenticationManager authenticationManager) {
+            AuthenticationManager authenticationManager,
+            LogService logService) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
         this.jwtService = jwtService;
         this.authenticationManager = authenticationManager;
+        this.logService = logService;
     }
 
     public UserResponseDTO register(UserCreateDto request) {
-        // Verificar se email já existe
         if (userRepository.findByEmail(request.getEmail()).isPresent()) {
             throw new RuntimeException("Email já cadastrado");
         }
 
-        // Validar política de senha
         validatePasswordPolicy(request.getPassword());
 
-        // Criar usuário com senha criptografada
         User user = new User();
         user.setIdUser(UUID.randomUUID());
         user.setName(request.getName());
@@ -58,32 +58,37 @@ public class AuthenticationService {
 
         User savedUser = userRepository.save(user);
 
+        logService.logCadastroUsuario(savedUser.getName(), savedUser.getEmail());
+
         return convertToResponseDto(savedUser);
     }
 
     public LoginResponseDTO login(LoginRequestDTO request) {
-        // Autenticar usuário
+        String email = request.getEmail();  
+        
+        try{
         Authentication authentication = authenticationManager.authenticate(
-                new UsernamePasswordAuthenticationToken(
-                        request.getEmail(),
-                        request.getSenha()
-                )
+                new UsernamePasswordAuthenticationToken(email, request.getSenha())
         );
 
         UserDetails userDetails = (UserDetails) authentication.getPrincipal();
         
-        // Buscar usuário para obter nome
-        User user = userRepository.findByEmail(request.getEmail())
+        User user = userRepository.findByEmail(email)
                 .orElseThrow(() -> new RuntimeException("Usuário não encontrado"));
 
-        // Gerar token JWT
+        logService.logEventoAplicacao("LOGIN_SUCESSO", "Login realizado com sucesso", email);
+
         Map<String, Object> extraClaims = new HashMap<>();
         extraClaims.put("nome", user.getName());
         
         String token = jwtService.generateToken(extraClaims, userDetails);
 
         return new LoginResponseDTO(token, user.getEmail(), user.getName());
+    }catch (Exception e) {
+        logService.logErroAutenticacao(email, "Credenciais inválidas");
+        throw new RuntimeException("Email ou senha inválidos");
     }
+}
 
     private void validatePasswordPolicy(String password) {
         if (password.length() < 10) {
