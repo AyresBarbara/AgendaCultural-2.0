@@ -38,11 +38,11 @@ public class JwtService {
 
     public String generateToken(Map<String, Object> extraClaims, UserDetails userDetails) {
         return Jwts.builder()
-                .claims(extraClaims)  // Mudou de setClaims para claims
-                .subject(userDetails.getUsername())  // Mudou de setSubject para subject
-                .issuedAt(new Date(System.currentTimeMillis()))  // Mudou de setIssuedAt para issuedAt
-                .expiration(new Date(System.currentTimeMillis() + jwtExpiration))  // Mudou de setExpiration para expiration
-                .signWith(getSignInKey())  // Mudou: não precisa mais passar o algoritmo
+                .claims(extraClaims)
+                .subject(userDetails.getUsername())
+                .issuedAt(new Date(System.currentTimeMillis()))
+                .expiration(new Date(System.currentTimeMillis() + jwtExpiration))
+                .signWith(getSignInKey())
                 .compact();
     }
 
@@ -61,10 +61,10 @@ public class JwtService {
 
     private Claims extractAllClaims(String token) {
         return Jwts.parser()
-                .verifyWith(getSignInKey())  // Mudou de parserBuilder().setSigningKey() para parser().verifyWith()
+                .verifyWith(getSignInKey())
                 .build()
                 .parseSignedClaims(token)
-                .getPayload();  // Mudou de getBody() para getPayload()
+                .getPayload();
     }
 
     private SecretKey getSignInKey() {

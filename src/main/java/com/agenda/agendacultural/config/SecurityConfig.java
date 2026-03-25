@@ -28,15 +28,17 @@ public class SecurityConfig {
         http
             .csrf(csrf -> csrf.disable())
             .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-            //.authorizeHttpRequests(auth -> auth
-              //  .requestMatchers("/api/auth/**").permitAll()
-                //.requestMatchers("/login", "/register", "/css/**", "/js/**").permitAll()
-                //.requestMatchers("/swagger-ui.html", "/swagger-ui/**", "/api-docs/**").permitAll()
-                //.anyRequest().authenticated()
-            //)
             .authorizeHttpRequests(auth -> auth
-                .anyRequest().permitAll()  // Libera TUDO
+                .requestMatchers("/", "/login", "/register", "/index", "/admin", "/css/**", "/js/**", "/images/**").permitAll()
+                .requestMatchers("/api/auth/**").permitAll()
+                .requestMatchers("/api/events", "/api/events/**").permitAll()
+                .requestMatchers("/api/categories", "/api/categories/**").permitAll()
+                .requestMatchers("/api/comments/event/**").permitAll()
+                .requestMatchers("/swagger-ui.html", "/swagger-ui/**", "/api-docs/**").permitAll()
+                .requestMatchers("/api/admin/**", "/api/users/**", "/api/comments/**", "/api/favorites/**").authenticated()
+                .anyRequest().authenticated()
             )
+    
             .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
         
         return http.build();
