@@ -30,4 +30,9 @@ public class PageController {
     public String admin() {
         return "admin";
     }
+    
+    @GetMapping("/perfil")
+    public String perfil() {
+        return "perfil";
+    }
 }

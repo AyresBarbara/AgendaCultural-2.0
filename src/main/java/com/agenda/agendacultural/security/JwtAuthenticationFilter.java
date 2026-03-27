@@ -33,6 +33,26 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             @NonNull FilterChain filterChain
     ) throws ServletException, IOException {
         
+        String path = request.getRequestURI();
+        
+        // Rotas que NÃO precisam de autenticação
+        if (path.equals("/") || 
+            path.equals("/login") || 
+            path.equals("/register") || 
+            path.equals("/index") || 
+            path.equals("/admin") ||
+            path.equals("/perfil") ||
+            path.startsWith("/css/") ||
+            path.startsWith("/js/") ||
+            path.startsWith("/images/") ||
+            path.startsWith("/api/auth/") ||
+            path.startsWith("/api/events") ||
+            path.startsWith("/api/categories") ||
+            path.startsWith("/api/comments/event/")) {
+            filterChain.doFilter(request, response);
+            return;
+        }
+        
         final String authHeader = request.getHeader("Authorization");
         final String jwt;
         final String userEmail;
