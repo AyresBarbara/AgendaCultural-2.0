@@ -7,12 +7,16 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.security.core.Authentication;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.agenda.agendacultural.dto.UserCreateDto;
 import com.agenda.agendacultural.dto.UserResponseDTO;
+import com.agenda.agendacultural.exception.ResourceNotFoundException;
+import com.agenda.agendacultural.model.User;
+import com.agenda.agendacultural.repository.UserRepository;
 import com.agenda.agendacultural.service.UserService;
 
 import jakarta.validation.Valid;
@@ -28,10 +32,12 @@ import io.swagger.v3.oas.annotations.responses.ApiResponses;
 public class UserController {
 
     private final UserService userService;
+    private final UserRepository userRepository;
     private static final Logger logger = LoggerFactory.getLogger(UserController.class);
 
-    public UserController(UserService userService) {
+    public UserController(UserService userService, UserRepository userRepository) {
         this.userService = userService;
+        this.userRepository = userRepository;
     }
 
     @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE)
@@ -91,5 +97,21 @@ public class UserController {
         userService.deleteUser(id);
         return ResponseEntity.noContent().build();
     }
-    
+
+    @GetMapping("/me")
+    @Operation(summary = "Get current user", description = "Returns the authenticated user")
+    public ResponseEntity<UserResponseDTO> getCurrentUser(Authentication authentication) {
+        String email = authentication.getName();
+        User user = userRepository.findByEmail(email)
+            .orElseThrow(() -> new ResourceNotFoundException("Usuário não encontrado com email: " + email));
+        
+        // Converte User para UserResponseDTO
+        UserResponseDTO dto = new UserResponseDTO();
+        dto.setIdUser(user.getIdUser());
+        dto.setName(user.getName());
+        dto.setEmail(user.getEmail());
+        dto.setRegistrationDate(user.getRegistrationDate());
+        
+        return ResponseEntity.ok(dto);
+    }
 }

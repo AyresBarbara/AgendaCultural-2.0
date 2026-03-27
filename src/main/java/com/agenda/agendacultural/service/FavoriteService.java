@@ -1,15 +1,11 @@
 package com.agenda.agendacultural.service;
 
+import com.agenda.agendacultural.dto.FavoriteDTO;
 import java.util.List;
 import java.util.UUID;
 
-import com.agenda.agendacultural.dto.FavoriteDTO;
-
 public interface FavoriteService {
-
-    FavoriteDTO addFavorite(FavoriteDTO favoriteDTO);
-
+    FavoriteDTO addFavorite(String email, UUID eventId);
     void removeFavorite(UUID userId, UUID eventId);
-
     List<FavoriteDTO> getFavoritesByUser(UUID userId);
 }

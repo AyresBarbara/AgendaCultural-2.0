@@ -101,15 +101,17 @@ async function carregarCategorias() {
 async function criarEvento(event) {
     event.preventDefault();
     
+    const userId = await getUsuarioId();
+    if (!userId) {
+        showMessage("Erro ao identificar usuário. Faça login novamente.", "error");
+        return;
+    }
+    
     const title = document.getElementById("evento-titulo").value;
     const description = document.getElementById("evento-descricao").value;
     const location = document.getElementById("evento-local").value;
     const dateTime = document.getElementById("evento-data").value;
-    const categorySelect = document.getElementById("evento-categoria");
-    const categoryId = categorySelect.value;
-    
-    console.log("Categoria selecionada:", categoryId);
-    console.log("Valor do select:", categorySelect.value);
+    const categoryId = document.getElementById("evento-categoria").value;
     
     if (!title || !location || !dateTime || !categoryId) {
         showMessage("Preencha todos os campos (incluindo categoria)", "error");
@@ -126,8 +128,11 @@ async function criarEvento(event) {
         description: description,
         location: location,
         dateTime: dateTime,
-        categoryId: categoryId
+        categoryId: categoryId,
+        createdById: userId   
     };
+    
+    console.log("Enviando evento:", evento);
     
     try {
         const response = await fetch("/api/events", {
@@ -140,7 +145,7 @@ async function criarEvento(event) {
         });
         
         const text = await response.text();
-        console.log("Resposta do servidor:", text);
+        console.log("Resposta:", text);
         
         if (response.ok) {
             showMessage("✅ Evento criado com sucesso!");
@@ -159,6 +164,20 @@ async function criarEvento(event) {
     }
 }
 
+// Pega o ID do usuário logado
+async function getUsuarioId() {
+    try {
+        const response = await fetch("/api/users/me", {
+            headers: { "Authorization": "Bearer " + token }
+        });
+        const user = await response.json();
+        return user.idUser;
+    } catch (error) {
+        console.error("Erro ao buscar ID do usuário:", error);
+        return null;
+    }
+}
+
 async function favoritarEvento(eventoId) {
     if (!token) {
         showMessage("Faça login para favoritar", "error");
@@ -172,7 +191,9 @@ async function favoritarEvento(eventoId) {
                 "Authorization": "Bearer " + token,
                 "Content-Type": "application/json"
             },
-            body: JSON.stringify({ eventId: eventoId })
+            body: JSON.stringify({ 
+                eventId: eventoId
+            })
         });
         
         if (response.ok) {
@@ -394,11 +415,34 @@ async function listarUsuarios() {
         });
         const users = await response.json();
         
-        let html = ' <thead> <th>ID</th><th>Nome</th><th>Email</th><th>Data Cadastro</th> </thead><tbody>';
+        let html = `
+            <table border="1" cellpadding="8" cellspacing="0" style="border-collapse: collapse; width: 100%;">
+                <thead>
+                    <tr style="background-color: #f2f2f2;">
+                        <th>ID</th>
+                        <th>Nome</th>
+                        <th>Email</th>
+                        <th>Data Cadastro</th>
+                    </tr>
+                </thead>
+                <tbody>
+        `;
+        
         users.forEach(user => {
-            html += `  <td>${user.idUser.substring(0, 8)}...</td><td>${escapeHtml(user.name)}</td><td>${user.email}</td><td>${formatarData(user.registrationDate)}</td> </tr>`;
+            html += `
+                <tr>
+                    <td>${user.idUser.substring(0, 8)}...</td>
+                    <td>${escapeHtml(user.name)}</td>
+                    <td>${user.email}</td>
+                    <td>${formatarData(user.registrationDate)}</td>
+                </tr>
+            `;
         });
-        html += '</tbody> </table>';
+        
+        html += `
+                </tbody>
+            </table>
+        `;
         
         document.getElementById("listaUsuarios").innerHTML = html;
         showMessage(`👥 ${users.length} usuário(s) encontrado(s)`);

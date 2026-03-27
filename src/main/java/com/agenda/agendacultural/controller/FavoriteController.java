@@ -1,11 +1,12 @@
 package com.agenda.agendacultural.controller;
 
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 import org.springframework.http.HttpStatus;
-import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
 import org.slf4j.Logger;
@@ -13,8 +14,6 @@ import org.slf4j.LoggerFactory;
 
 import com.agenda.agendacultural.dto.FavoriteDTO;
 import com.agenda.agendacultural.service.FavoriteService;
-
-import jakarta.validation.Valid;
 
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -33,15 +32,21 @@ public class FavoriteController {
         this.favoriteService = favoriteService;
     }
 
-    @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE)
-    @Operation(summary = "Add a favorite", description = "Adds a new favorite for a user")
+    @PostMapping
+    @Operation(summary = "Add a favorite", description = "Adds a new favorite for the authenticated user")
     @ApiResponses(value = {
             @ApiResponse(responseCode = "201", description = "Favorite added successfully"),
             @ApiResponse(responseCode = "400", description = "Invalid input")
     })
-    public ResponseEntity<FavoriteDTO> addFavorite(@Valid @RequestBody FavoriteDTO favoriteDTO) {
+    public ResponseEntity<FavoriteDTO> addFavorite(@RequestBody Map<String, String> request, Authentication authentication) {
         logger.info("POST /api/favorites - Adding favorite");
-        FavoriteDTO createdFavorite = favoriteService.addFavorite(favoriteDTO);
+        
+        String eventId = request.get("eventId");
+        String email = authentication.getName();
+        
+        logger.info("Evento ID: {}, Usuário email: {}", eventId, email);
+        
+        FavoriteDTO createdFavorite = favoriteService.addFavorite(email, UUID.fromString(eventId));
         return ResponseEntity.status(HttpStatus.CREATED).body(createdFavorite);
     }
 
