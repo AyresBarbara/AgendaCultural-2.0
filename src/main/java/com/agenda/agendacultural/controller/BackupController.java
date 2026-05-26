@@ -1,372 +1,69 @@
 package com.agenda.agendacultural.controller;
 
-import org.springframework.beans.factory.annotation.Value;
+import com.agenda.agendacultural.service.BackupService;
 import org.springframework.http.ResponseEntity;
-import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.http.MediaType;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.*;
-import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
-import java.util.*;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/admin")
 public class BackupController {
 
     private static final Logger logger = LoggerFactory.getLogger(BackupController.class);
-    private static final String BACKUP_DIR = "./backups/";
+    private final BackupService backupService;
 
-    @Value("${mysqldump.path:mysqldump}")
-    private String mysqldumpPath;
+    public BackupController(BackupService backupService) {
+        this.backupService = backupService;
+    }
 
-    @Value("${spring.datasource.username:root}")
-    private String dbUser;
-
-    @Value("${spring.datasource.password:}")
-    private String dbPassword;
-
-    @Value("${spring.datasource.url:jdbc:mysql://localhost:3306/agenda_cultural}")
-    private String dbUrl;
-
-    /**
-     * Endpoint para realizar backup do banco de dados
-     */
     @PostMapping("/backup")
-    public ResponseEntity<?> realizarBackup() {
+    public ResponseEntity<?> fazerBackup() {
         try {
-            logger.info("Iniciando backup do banco de dados...");
-            
-            File pastaBackup = new File(BACKUP_DIR);
-            if (!pastaBackup.exists()) {
-                pastaBackup.mkdirs();
-                logger.info("Pasta de backups criada: {}", BACKUP_DIR);
-            }
-
-            String dbName = extractDatabaseName(dbUrl);
-            String dataHora = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"));
-            String nomeArquivo = "backup_" + dbName + "_" + dataHora + ".sql";
-            String caminhoCompleto = BACKUP_DIR + nomeArquivo;
-
-            // Comando mysqldump com --no-defaults para suprimir avisos
-            List<String> comando = new ArrayList<>();
-            comando.add(mysqldumpPath);
-            comando.add("--no-defaults");
-            comando.add("-u" + dbUser);
-            comando.add("-p" + dbPassword);
-            comando.add(dbName);
-
-            logger.info("Comando: {}", String.join(" ", comando));
-
-            ProcessBuilder processBuilder = new ProcessBuilder(comando);
-            processBuilder.redirectOutput(new File(caminhoCompleto));
-            processBuilder.redirectErrorStream(true);
-            
-            Process processo = processBuilder.start();
-            int codigoSaida = processo.waitFor();
-
-            if (codigoSaida == 0) {
-                logger.info("✅ Backup concluído: {}", nomeArquivo);
-                return ResponseEntity.ok(Map.of(
-                    "mensagem", "Backup realizado com sucesso!",
-                    "arquivo", nomeArquivo,
-                    "caminho", caminhoCompleto,
-                    "data", LocalDateTime.now().toString()
-                ));
-            } else {
-                throw new Exception("Erro no backup. Código: " + codigoSaida);
-            }
-
+            String nomeArquivo = backupService.realizarBackup("backup_manual");
+            return ResponseEntity.ok(Map.of(
+                "mensagem", "Backup realizado com sucesso!",
+                "arquivo", nomeArquivo
+            ));
         } catch (Exception e) {
-            logger.error("❌ Erro no backup: {}", e.getMessage());
+            logger.error("Erro ao fazer backup: {}", e.getMessage());
             return ResponseEntity.status(500).body(Map.of("erro", e.getMessage()));
         }
     }
 
-    /**
-     * Endpoint para listar todos os backups disponíveis
-     */
     @GetMapping("/backups")
     public ResponseEntity<?> listarBackups() {
         try {
-            File pastaBackup = new File(BACKUP_DIR);
-            if (!pastaBackup.exists()) {
-                return ResponseEntity.ok(Collections.emptyList());
-            }
-
-            File[] arquivos = pastaBackup.listFiles((dir, name) -> name.endsWith(".sql"));
-            List<Map<String, Object>> backups = new ArrayList<>();
-
-            if (arquivos != null) {
-                for (File arquivo : arquivos) {
-                    Map<String, Object> info = new HashMap<>();
-                    info.put("nome", arquivo.getName());
-                    info.put("tamanho", arquivo.length() + " bytes");
-                    info.put("data", new Date(arquivo.lastModified()).toString());
-                    backups.add(info);
-                }
-            }
-
-            // Ordenar do mais novo para o mais antigo
-            backups.sort((a, b) -> b.get("nome").toString().compareTo(a.get("nome").toString()));
-
-            return ResponseEntity.ok(backups);
-
+            return ResponseEntity.ok(backupService.listarBackups());
         } catch (Exception e) {
+            logger.error("Erro ao listar backups: {}", e.getMessage());
             return ResponseEntity.status(500).body(Map.of("erro", e.getMessage()));
         }
     }
 
-    /**
-     * Extrai o nome do banco de dados da URL JDBC
-     */
-    private String extractDatabaseName(String url) {
-        int lastSlash = url.lastIndexOf('/');
-        if (lastSlash > 0) {
-            String db = url.substring(lastSlash + 1);
-            int questionMark = db.indexOf('?');
-            if (questionMark > 0) {
-                return db.substring(0, questionMark);
-            }
-            return db;
-        }
-        return "agenda_cultural";
-    }
-
-    /**
-     * Endpoint para restaurar backup a partir de um arquivo existente
-     */
     @PostMapping("/restore")
-public ResponseEntity<?> restaurarBackup(@RequestBody Map<String, String> request) {
-    try {
-        String nomeArquivo = request.get("arquivo");
-        
-        if (nomeArquivo == null || nomeArquivo.isEmpty()) {
-            return ResponseEntity.badRequest().body(Map.of("erro", "Nome do arquivo não fornecido"));
+    public ResponseEntity<?> restaurarBackup(@RequestBody Map<String, String> request) {
+        try {
+            backupService.restaurarBackup(request.get("arquivo"));
+            return ResponseEntity.ok(Map.of("mensagem", "Restore realizado com sucesso!"));
+        } catch (Exception e) {
+            logger.error("Erro ao restaurar: {}", e.getMessage());
+            return ResponseEntity.status(500).body(Map.of("erro", e.getMessage()));
         }
-
-        logger.info("===== INICIANDO RESTORE =====");
-        logger.info("Arquivo solicitado: {}", nomeArquivo);
-        
-        String caminhoCompleto = BACKUP_DIR + nomeArquivo;
-        File arquivoBackup = new File(caminhoCompleto);
-        
-        if (!arquivoBackup.exists()) {
-            return ResponseEntity.status(404).body(Map.of("erro", "Arquivo de backup não encontrado: " + nomeArquivo));
-        }
-
-        // CRIAR UM ARQUIVO LIMPO (SEM O AVISO DO MYSQLDUMP)
-        File arquivoLimpo = new File(BACKUP_DIR + "clean_" + nomeArquivo);
-        
-        try (BufferedReader reader = new BufferedReader(new FileReader(arquivoBackup));
-             BufferedWriter writer = new BufferedWriter(new FileWriter(arquivoLimpo))) {
-            
-            String linha;
-            while ((linha = reader.readLine()) != null) {
-                // Pular linhas que são avisos do mysqldump
-                if (linha.startsWith("mysqldump: [Warning]") || 
-                    linha.contains("Using a password on the command line")) {
-                    logger.info("Pulando linha de aviso: {}", linha);
-                    continue;
-                }
-                writer.write(linha);
-                writer.newLine();
-            }
-        }
-        
-        logger.info("Arquivo limpo criado: {}", arquivoLimpo.getName());
-
-        String dbName = extractDatabaseName(dbUrl);
-        String mysqlPath = mysqldumpPath.replace("mysqldump.exe", "mysql.exe");
-
-        List<String> comando = new ArrayList<>();
-        comando.add(mysqlPath);
-        comando.add("-u" + dbUser);
-        comando.add("-p" + dbPassword);
-        comando.add(dbName);
-
-        logger.info("Comando: {}", String.join(" ", comando));
-
-        ProcessBuilder processBuilder = new ProcessBuilder(comando);
-        processBuilder.redirectInput(arquivoLimpo);
-        processBuilder.redirectErrorStream(true);
-        
-        Process processo = processBuilder.start();
-        
-        BufferedReader reader = new BufferedReader(new InputStreamReader(processo.getInputStream()));
-        String linha;
-        StringBuilder output = new StringBuilder();
-        while ((linha = reader.readLine()) != null) {
-            logger.info("MYSQL: {}", linha);
-            output.append(linha).append("\n");
-        }
-        
-        int codigoSaida = processo.waitFor();
-        
-        // Apagar arquivo limpo
-        arquivoLimpo.delete();
-
-        if (codigoSaida == 0) {
-            logger.info("✅ RESTORE CONCLUÍDO!");
-            return ResponseEntity.ok(Map.of(
-                "mensagem", "Restore realizado com sucesso!",
-                "arquivo", nomeArquivo
-            ));
-        } else {
-            return ResponseEntity.status(500).body(Map.of(
-                "erro", "Falha no restore. Código: " + codigoSaida,
-                "detalhes", output.toString()
-            ));
-        }
-
-    } catch (Exception e) {
-        logger.error("❌ ERRO: ", e);
-        return ResponseEntity.status(500).body(Map.of("erro", e.getMessage()));
     }
-}
 
-    /**
-     * Endpoint para restaurar backup via upload de arquivo
-     */
     @PostMapping(value = "/restore/upload", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-public ResponseEntity<?> restaurarBackupUpload(@RequestParam("file") MultipartFile file) {
-    try {
-        logger.info("Iniciando restore via upload: {}", file.getOriginalFilename());
-        
-        String userDir = System.getProperty("user.dir");
-        String backupPath = userDir + File.separator + "backups";
-        
-        File pastaBackup = new File(backupPath);
-        if (!pastaBackup.exists()) {
-            pastaBackup.mkdirs();
-            logger.info("Pasta de backups criada em: {}", pastaBackup.getAbsolutePath());
+    public ResponseEntity<?> restaurarBackupUpload(@RequestParam("file") MultipartFile file) {
+        try {
+            backupService.restaurarBackupStream(file.getInputStream(), file.getOriginalFilename());
+            return ResponseEntity.ok(Map.of("mensagem", "Restore via upload realizado com sucesso!"));
+        } catch (Exception e) {
+            logger.error("Erro no upload: {}", e.getMessage());
+            return ResponseEntity.status(500).body(Map.of("erro", e.getMessage()));
         }
-        
-        // Salvar arquivo original temporário
-        File tempFileOriginal = new File(pastaBackup, "temp_original_" + file.getOriginalFilename());
-        file.transferTo(tempFileOriginal);
-        logger.info("Arquivo original salvo em: {}", tempFileOriginal.getAbsolutePath());
-        
-        // Criar arquivo limpo (sem avisos do mysqldump)
-        File tempFileLimpo = new File(pastaBackup, "temp_limpo_" + file.getOriginalFilename());
-        
-        try (BufferedReader reader = new BufferedReader(new FileReader(tempFileOriginal));
-             BufferedWriter writer = new BufferedWriter(new FileWriter(tempFileLimpo))) {
-            
-            String linha;
-            while ((linha = reader.readLine()) != null) {
-                // Pular linhas de aviso do mysqldump
-                if (linha.startsWith("mysqldump: [Warning]") || 
-                    linha.contains("Using a password on the command line")) {
-                    logger.info("Pulando linha de aviso: {}", linha);
-                    continue;
-                }
-                writer.write(linha);
-                writer.newLine();
-            }
-        }
-        
-        logger.info("Arquivo limpo criado: {}", tempFileLimpo.getAbsolutePath());
-        logger.info("Arquivo limpo tamanho: {} bytes", tempFileLimpo.length());
-
-        String dbName = extractDatabaseName(dbUrl);
-        String mysqlPath = mysqldumpPath.replace("mysqldump.exe", "mysql.exe");
-        
-        File mysqlFile = new File(mysqlPath);
-        if (!mysqlFile.exists()) {
-            throw new Exception("mysql.exe não encontrado em: " + mysqlPath);
-        }
-
-        List<String> comando = new ArrayList<>();
-        comando.add(mysqlPath);
-        comando.add("-u" + dbUser);
-        comando.add("-p" + dbPassword);
-        comando.add(dbName);
-
-        logger.info("Comando: {}", String.join(" ", comando));
-
-        ProcessBuilder processBuilder = new ProcessBuilder(comando);
-        processBuilder.redirectInput(tempFileLimpo);
-        processBuilder.redirectErrorStream(true);
-        
-        Process processo = processBuilder.start();
-        
-        BufferedReader reader = new BufferedReader(new InputStreamReader(processo.getInputStream()));
-        String linha;
-        StringBuilder output = new StringBuilder();
-        while ((linha = reader.readLine()) != null) {
-            logger.info("MYSQL: {}", linha);
-            output.append(linha).append("\n");
-        }
-        
-        int codigoSaida = processo.waitFor();
-        logger.info("Código de saída: {}", codigoSaida);
-
-        // Apagar arquivos temporários
-        tempFileOriginal.delete();
-        tempFileLimpo.delete();
-        logger.info("Arquivos temporários removidos");
-
-        if (codigoSaida == 0) {
-            logger.info("✅ Restore via upload concluído!");
-            return ResponseEntity.ok(Map.of(
-                "mensagem", "Restore realizado com sucesso!",
-                "arquivo", file.getOriginalFilename()
-            ));
-        } else {
-            throw new Exception("Erro ao restaurar backup. Código: " + codigoSaida + " - Saída: " + output.toString());
-        }
-
-    } catch (Exception e) {
-        logger.error("❌ Erro no restore via upload: ", e);
-        return ResponseEntity.status(500).body(Map.of(
-            "erro", "Falha no restore: " + e.getMessage(),
-            "detalhes", e.toString()
-        ));
     }
-}
-
-
-    //backup agendado
-    @Scheduled(cron = "0 0 2 * * ?") // Executa todo dia às 2h
-public void backupAgendado() {
-    try {
-        logger.info("Executando backup agendado...");
-        
-        File pastaBackup = new File(BACKUP_DIR);
-        if (!pastaBackup.exists()) pastaBackup.mkdirs();
-
-        String dbName = extractDatabaseName(dbUrl);
-        String dataHora = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"));
-        String nomeArquivo = "backup_agendado_" + dbName + "_" + dataHora + ".sql";
-        String caminhoCompleto = BACKUP_DIR + nomeArquivo;
-
-        List<String> comando = new ArrayList<>();
-        comando.add(mysqldumpPath);
-        comando.add("--no-defaults");
-        comando.add("-u" + dbUser);
-        comando.add("-p" + dbPassword);
-        comando.add(dbName);
-
-        ProcessBuilder processBuilder = new ProcessBuilder(comando);
-        processBuilder.redirectOutput(new File(caminhoCompleto));
-        processBuilder.redirectErrorStream(true);
-        
-        Process processo = processBuilder.start();
-        int codigoSaida = processo.waitFor();
-
-        if (codigoSaida == 0) {
-            logger.info("Backup agendado realizado: {}", nomeArquivo);
-        } else {
-            logger.error("Erro no backup agendado");
-        }
-
-    } catch (Exception e) {
-        logger.error("Erro no backup agendado: {}", e.getMessage());
-    }
-}
 }
